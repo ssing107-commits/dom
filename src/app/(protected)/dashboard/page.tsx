@@ -198,12 +198,8 @@ export default function DashboardPage() {
           .map((r) => {
             const n = r.name.trim();
             if (!n) return null;
-            const displayName =
-              r.status === "scheduled"
-                ? `${n}(예정)`
-                : r.status === "move_out_scheduled"
-                  ? `${n}(퇴실예정)`
-                  : n;
+            // 색으로만 상태를 구분하고, 이름 텍스트에는 (예정)/(퇴실예정) 같은 접미사는 표시하지 않습니다.
+            const displayName = n;
             return { id: r.id, displayName, status: r.status };
           })
           .filter((v): v is ResidentDisplayChip => Boolean(v));
@@ -485,8 +481,21 @@ export default function DashboardPage() {
               </div>
             ) : null}
           </div>
-          <div data-report-exclude="true" className="text-xs text-zinc-500">
-            인덱스
+          <div className="flex items-center gap-3 text-xs text-zinc-500">
+            <span className="flex items-center gap-1.5">
+              <span
+                aria-hidden
+                className="inline-block h-3 w-3 rounded-[2px] border border-amber-200 bg-amber-50"
+              />
+              입주예정
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span
+                aria-hidden
+                className="inline-block h-3 w-3 rounded-[2px] border border-sky-200 bg-sky-50"
+              />
+              퇴실예정
+            </span>
           </div>
         </div>
 
@@ -508,7 +517,6 @@ export default function DashboardPage() {
             <table className="w-full min-w-[1180px] border-collapse text-[14px]">
               <thead className="sticky top-0 bg-zinc-50 text-[12px] text-zinc-600">
                 <tr className="border-b border-zinc-200">
-                  <th className="w-[50px] px-3 py-2 text-left align-top font-medium">번호</th>
                   <th className="w-[70px] px-3 py-2 text-left align-top font-medium">건물유형</th>
                   <th className="w-[70px] px-3 py-2 text-left align-top font-medium">임대형태</th>
                   <th className="px-3 py-2 text-left align-top font-medium">기숙사</th>
@@ -530,9 +538,6 @@ export default function DashboardPage() {
                       idx % 2 === 1 ? "bg-white" : "bg-white"
                     )}
                   >
-                    <td className="w-[50px] px-3 py-2 text-left align-top text-zinc-500">
-                      {idx + 1}
-                    </td>
                     <td className="w-[70px] px-3 py-2 text-left align-top text-zinc-800">
                       {x.dorm.propertyBuildingType ?? "-"}
                     </td>
@@ -832,10 +837,10 @@ function ResidentNames({ residents }: { residents: ResidentDisplayChip[] }) {
   const shown = residents.slice(0, 4);
   const rest = residents.length - shown.length;
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
       {shown.map((r) => {
         const pillClass = cn(
-          "rounded-full border px-2.5 py-1 text-xs font-medium",
+          "rounded-full border px-2.5 py-1 text-xs font-medium shrink-0",
           r.status === "active"
             ? "border-zinc-200 bg-white text-zinc-700"
             : r.status === "scheduled"
@@ -852,7 +857,7 @@ function ResidentNames({ residents }: { residents: ResidentDisplayChip[] }) {
         );
       })}
       {rest > 0 ? (
-        <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
+        <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600 shrink-0">
           +{rest}
         </span>
       ) : null}

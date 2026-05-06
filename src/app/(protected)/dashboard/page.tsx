@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { cn } from "@/lib/cn";
 import type { Dormitory, HousingTenureType, PropertyBuildingType, Resident } from "@/lib/types";
+import type PptxGenJS from "pptxgenjs";
 import { HOUSING_TENURE_TYPES, isOccupyingResidentStatus, PROPERTY_BUILDING_TYPES } from "@/lib/types";
 
 type DormRowVM = {
@@ -138,7 +139,6 @@ const SELECT_FIELD_CLASS =
 export default function DashboardPage() {
   const [items, setItems] = useState<DormRowVM[] | null>(null);
   const { toast } = useToast();
-  const reportRef = useRef<HTMLDivElement | null>(null);
   const [exportingReport, setExportingReport] = useState(false);
 
   function dateToInputValue(d: Date) {
@@ -279,56 +279,6 @@ export default function DashboardPage() {
     };
   }, []);
 
-  async function exportDashboardPpt() {
-    const node = reportRef.current;
-    if (!node) return;
-    setExportingReport(true);
-    try {
-      const { toPng } = await import("html-to-image");
-      const { default: PptxGenJS } = await import("pptxgenjs");
-      const dataUrl = await toPng(node, {
-        cacheBust: true,
-        pixelRatio: 2,
-        backgroundColor: "#ffffff",
-        filter: (n) => {
-          const el = n as HTMLElement;
-          return !el.dataset?.reportExclude;
-        },
-      });
-
-      const pptx = new PptxGenJS();
-      pptx.layout = "LAYOUT_WIDE";
-      pptx.author = "Dorm Manager";
-      pptx.subject = "기숙사 전체 현황";
-      pptx.title = `기숙사 전체 현황 ${fmtYmd(new Date())}`;
-
-      const slide = pptx.addSlide();
-      slide.addText(`기숙사 전체 현황 (${fmtYmd(new Date())})`, {
-        x: 0.3,
-        y: 0.2,
-        w: 12.7,
-        h: 0.3,
-        fontSize: 16,
-        bold: true,
-        color: "1f2937",
-      });
-      slide.addImage({
-        data: dataUrl,
-        x: 0.3,
-        y: 0.55,
-        w: 12.7,
-        h: 6.45,
-      });
-
-      await pptx.writeFile({ fileName: `기숙사-전체현황-보고서-${fmtYmd(new Date())}.pptx` });
-      toast({ title: "보고서(PPT) 생성 완료", variant: "success" });
-    } catch {
-      toast({ title: "보고서 생성 실패", variant: "error" });
-    } finally {
-      setExportingReport(false);
-    }
-  }
-
   const expiringCount = useMemo(
     () => (items ?? []).filter((x) => x.expiringSoon).length,
     [items]
@@ -387,8 +337,151 @@ export default function DashboardPage() {
     return { active, count: rows.length, totalDeposit, totalMonthlyRent, buildingCounts, tenureCounts };
   }, [filtered]);
 
+  async function exportDashboardPpt() {
+    if (items === null) return;
+    setExportingReport(true);
+    try {
+      const { default: PptxGenJS } = await import("pptxgenjs");
+
+      const FONT = "Malgun Gothic";
+      const HEADER_FS = 12;
+      const BODY_FS = 14;
+      const HEADER_FILL = "FAFAFA";
+      const ROW_FILL_A = "FFFFFF";
+      const ROW_FILL_B = "FAFAFA";
+      const BORDER = { pt: 0.5, color: "E4E4E7" };
+      const CELL_MARGIN: [number, number, number, number] = [0.04, 0.04, 0.04, 0.04];
+
+      const headerCell = (label: string): PptxGenJS.TableCell => ({
+        text: label,
+        options: {
+          fontFace: FONT,
+          bold: true,
+          valign: "middle",
+          align: "center",
+          fill: { color: HEADER_FILL },
+          color: "52525B",
+          fontSize: HEADER_FS,
+          margin: CELL_MARGIN,
+        },
+      });
+
+      function bodyCell(text: string, rowIdx: number, align: "left" | "right" | "center" = "left"): PptxGenJS.TableCell {
+        return {
+          text,
+          options: {
+            fontFace: FONT,
+            valign: "middle",
+            align,
+            color: "18181B",
+            fontSize: BODY_FS,
+            fill: { color: rowIdx % 2 === 0 ? ROW_FILL_A : ROW_FILL_B },
+            margin: CELL_MARGIN,
+          },
+        };
+      }
+
+      function residentCell(chips: ResidentDisplayChip[], rowIdx: number): PptxGenJS.TableCell {
+        if (!chips.length) {
+          return bodyCell("-", rowIdx, "left");
+        }
+        const runs: PptxGenJS.TextProps[] = [];
+        chips.forEach((c, i) => {
+          if (i > 0) runs.push({ text: "  ", options: { fontFace: FONT, fontSize: BODY_FS } });
+          const base: PptxGenJS.TextPropsOptions = {
+            fontFace: FONT,
+            fontSize: BODY_FS,
+            bold: true,
+          };
+          if (c.status === "scheduled") {
+            base.highlight = "FFFBEB";
+            base.color = "B45309";
+          } else if (c.status === "move_out_scheduled") {
+            base.highlight = "F0F9FF";
+            base.color = "075985";
+          } else {
+            base.color = "18181B";
+          }
+          runs.push({ text: c.displayName, options: base });
+        });
+        return {
+          text: runs,
+          options: {
+            valign: "middle",
+            align: "left",
+            fill: { color: rowIdx % 2 === 0 ? ROW_FILL_A : ROW_FILL_B },
+            margin: CELL_MARGIN,
+          },
+        };
+      }
+
+      const headerRow: PptxGenJS.TableRow = [
+        headerCell("건물유형"),
+        headerCell("임대형태"),
+        headerCell("기숙사명"),
+        headerCell("입주자"),
+        headerCell("계약만료"),
+        headerCell("보증금"),
+        headerCell("월세"),
+      ];
+
+      const bodyRows: PptxGenJS.TableRow[] = filtered.map((x, rowIdx) => {
+        const t = x.dorm.housingTenureType;
+        const contractEnd = t === "소유" ? "" : fmtYmd(x.dorm.contractEnd.toDate());
+        const deposit = t === "소유" ? "" : fmtMoney(x.dorm.deposit);
+        const monthly = t === "전세" || t === "소유" ? "" : fmtMoney(x.dorm.monthlyRent);
+        return [
+          bodyCell(x.dorm.propertyBuildingType ?? "-", rowIdx, "left"),
+          bodyCell(t ?? "-", rowIdx, "left"),
+          bodyCell(x.dorm.name, rowIdx, "left"),
+          residentCell(x.activeResidentChips, rowIdx),
+          bodyCell(contractEnd, rowIdx, "left"),
+          bodyCell(deposit, rowIdx, "left"),
+          bodyCell(monthly, rowIdx, "left"),
+        ];
+      });
+
+      const tableRows: PptxGenJS.TableRow[] = [headerRow, ...bodyRows];
+
+      const pptx = new PptxGenJS();
+      pptx.layout = "LAYOUT_WIDE";
+      pptx.author = "Dorm Manager";
+      pptx.subject = "기숙사 전체 현황";
+      const today = fmtYmd(new Date());
+      pptx.title = `기숙사 전체 현황 ${today}`;
+
+      const slide = pptx.addSlide();
+      slide.addText(`기숙사 전체 현황 (${today})`, {
+        x: 0.3,
+        y: 0.2,
+        w: 12.7,
+        h: 0.35,
+        fontFace: FONT,
+        fontSize: 20,
+        bold: true,
+        color: "18181B",
+      });
+
+      slide.addTable(tableRows, {
+        x: 0.3,
+        y: 0.62,
+        w: 12.7,
+        colW: [0.95, 0.95, 2.75, 3.85, 1.35, 1.45, 1.5],
+        border: BORDER,
+        fontFace: FONT,
+      });
+
+      await pptx.writeFile({ fileName: `기숙사-전체현황-보고서-${today}.pptx` });
+      toast({ title: "보고서(PPT) 생성 완료", variant: "success" });
+    } catch {
+      toast({ title: "보고서 생성 실패", variant: "error" });
+    } finally {
+      setExportingReport(false);
+    }
+  }
+
   return (
-    <div ref={reportRef} className="space-y-4">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <div className="text-2xl font-semibold">기숙사 전체 현황</div>

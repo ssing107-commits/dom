@@ -19,9 +19,9 @@ export const metadata: Metadata = {
   title: "기숙사 관리 시스템",
   description: "기숙사 관리 웹 애플리케이션",
   icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
-    apple: "/favicon.ico",
+    icon: [{ url: "/favicon.ico?v=2" }],
+    shortcut: [{ url: "/favicon.ico?v=2" }],
+    apple: [{ url: "/favicon.ico?v=2" }],
   },
 };
 

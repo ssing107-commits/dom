@@ -128,11 +128,6 @@ function fmtMoney(n: number | null | undefined) {
   return `${(n ?? 0).toLocaleString()}원`;
 }
 
-function formatAddressForDashboard(address: string | undefined): string {
-  const raw = (address ?? "").trim();
-  return raw.replace(/^충남\s+/, "");
-}
-
 const SELECT_FIELD_CLASS =
   "h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400";
 
@@ -607,13 +602,12 @@ export default function DashboardPage() {
               표시할 데이터가 없습니다. (검색/필터를 확인하거나 기숙사를 추가하세요)
             </div>
           ) : (
-            <table className="w-full min-w-[1180px] border-collapse text-[14px]">
+            <table className="w-full min-w-[980px] border-collapse text-[14px]">
               <thead className="sticky top-0 bg-zinc-50 text-[12px] text-zinc-600">
                 <tr className="border-b border-zinc-200">
                   <th className="w-[70px] px-3 py-2 text-left align-top font-medium">건물유형</th>
                   <th className="w-[70px] px-3 py-2 text-left align-top font-medium">임대형태</th>
                   <th className="px-3 py-2 text-left align-top font-medium">기숙사</th>
-                  <th className="px-3 py-2 text-left align-top font-medium">주소</th>
                   <th className="px-3 py-2 text-left align-top font-medium">입주자</th>
                   <th className="px-3 py-2 text-left align-top font-medium">계약만료</th>
                   <th className="px-3 py-2 text-left align-top font-medium">D-day</th>
@@ -661,9 +655,6 @@ export default function DashboardPage() {
                           ) : null}
                         </div>
                       </div>
-                    </td>
-                    <td className="px-3 py-2 text-left align-top text-zinc-700">
-                      {formatAddressForDashboard(x.dorm.address)}
                     </td>
                     <td className="px-3 py-2 text-left align-top">
                       <ResidentNames residents={x.activeResidentChips} />

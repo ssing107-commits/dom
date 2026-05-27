@@ -1092,15 +1092,11 @@ function SortableTh({
         aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
       >
         <span>{label}</span>
-        <span
-          className={cn(
-            "text-[10px] leading-none",
-            active ? "text-zinc-700" : "text-zinc-300 group-hover:text-zinc-400"
-          )}
-          aria-hidden
-        >
-          {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
-        </span>
+        {active ? (
+          <span className="text-[10px] leading-none text-zinc-700" aria-hidden>
+            {sortDir === "asc" ? "▲" : "▼"}
+          </span>
+        ) : null}
       </button>
     </th>
   );

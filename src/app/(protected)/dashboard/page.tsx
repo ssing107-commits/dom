@@ -41,10 +41,127 @@ type ResidentDisplayChip = {
 
 const BUILDING_TYPE_ORDER: PropertyBuildingType[] = ["아파트", "투룸", "원룸"];
 
+type DashboardSortKey =
+  | "building"
+  | "tenure"
+  | "dorm"
+  | "resident"
+  | "contractEnd"
+  | "dDay"
+  | "deposit"
+  | "monthlyRent"
+  | "rentDue";
+
+type SortDir = "asc" | "desc";
+
+const RENT_DUE_SORT_ORDER: Record<Dormitory["rentDueType"], number> = {
+  "10일": 0,
+  말일: 1,
+};
+
 function buildingTypeRank(type: Dormitory["propertyBuildingType"]): number {
   if (!type) return 999;
   const idx = BUILDING_TYPE_ORDER.indexOf(type);
   return idx >= 0 ? idx : 998;
+}
+
+function buildingTypeColumnRank(type: Dormitory["propertyBuildingType"]): number {
+  if (!type) return 999;
+  const idx = PROPERTY_BUILDING_TYPES.indexOf(type);
+  return idx >= 0 ? idx : 998;
+}
+
+function tenureTypeRank(type: Dormitory["housingTenureType"]): number {
+  if (!type) return 999;
+  const idx = HOUSING_TENURE_TYPES.indexOf(type);
+  return idx >= 0 ? idx : 998;
+}
+
+function isOwnedTenure(type: Dormitory["housingTenureType"] | undefined): boolean {
+  return type === "소유";
+}
+
+function compareDashboardRows(a: DormRowVM, b: DormRowVM, key: DashboardSortKey): number {
+  switch (key) {
+    case "building":
+      return (
+        buildingTypeColumnRank(a.dorm.propertyBuildingType) -
+        buildingTypeColumnRank(b.dorm.propertyBuildingType)
+      );
+    case "tenure":
+      return tenureTypeRank(a.dorm.housingTenureType) - tenureTypeRank(b.dorm.housingTenureType);
+    case "dorm":
+      return a.dorm.name.localeCompare(b.dorm.name, "ko");
+    case "resident": {
+      if (a.primaryResidentRoleRank !== b.primaryResidentRoleRank) {
+        return a.primaryResidentRoleRank - b.primaryResidentRoleRank;
+      }
+      return a.primaryResidentName.localeCompare(b.primaryResidentName, "ko");
+    }
+    case "contractEnd": {
+      const ownedA = isOwnedTenure(a.dorm.housingTenureType);
+      const ownedB = isOwnedTenure(b.dorm.housingTenureType);
+      if (ownedA && ownedB) return 0;
+      if (ownedA) return 1;
+      if (ownedB) return -1;
+      return a.dorm.contractEnd.toMillis() - b.dorm.contractEnd.toMillis();
+    }
+    case "dDay": {
+      const ownedA = isOwnedTenure(a.dorm.housingTenureType);
+      const ownedB = isOwnedTenure(b.dorm.housingTenureType);
+      if (ownedA && ownedB) return 0;
+      if (ownedA) return 1;
+      if (ownedB) return -1;
+      return a.dDay - b.dDay;
+    }
+    case "deposit": {
+      const ownedA = isOwnedTenure(a.dorm.housingTenureType);
+      const ownedB = isOwnedTenure(b.dorm.housingTenureType);
+      if (ownedA && ownedB) return 0;
+      if (ownedA) return 1;
+      if (ownedB) return -1;
+      return (a.dorm.deposit ?? 0) - (b.dorm.deposit ?? 0);
+    }
+    case "monthlyRent": {
+      const monthly = (x: DormRowVM) => {
+        const t = x.dorm.housingTenureType;
+        if (t === "전세" || t === "소유") return 0;
+        return x.dorm.monthlyRent ?? 0;
+      };
+      return monthly(a) - monthly(b);
+    }
+    case "rentDue":
+      return (
+        (RENT_DUE_SORT_ORDER[a.dorm.rentDueType] ?? 9) -
+        (RENT_DUE_SORT_ORDER[b.dorm.rentDueType] ?? 9)
+      );
+    default:
+      return 0;
+  }
+}
+
+function defaultDashboardRowCompare(a: DormRowVM, b: DormRowVM): number {
+  const brA = buildingTypeRank(a.dorm.propertyBuildingType);
+  const brB = buildingTypeRank(b.dorm.propertyBuildingType);
+  if (brA !== brB) return brA - brB;
+  if (a.primaryResidentRoleRank !== b.primaryResidentRoleRank) {
+    return a.primaryResidentRoleRank - b.primaryResidentRoleRank;
+  }
+  if (a.primaryResidentName !== b.primaryResidentName) {
+    return a.primaryResidentName.localeCompare(b.primaryResidentName, "ko");
+  }
+  return a.dorm.name.localeCompare(b.dorm.name, "ko");
+}
+
+function applyDashboardSort(rows: DormRowVM[], sortKey: DashboardSortKey | null, sortDir: SortDir) {
+  const dirMul = sortDir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const primary = sortKey
+      ? compareDashboardRows(a, b, sortKey)
+      : defaultDashboardRowCompare(a, b);
+    if (primary !== 0) return primary * dirMul;
+    return a.dorm.name.localeCompare(b.dorm.name, "ko");
+  });
 }
 
 function residentRoleRank(name: string): number {
@@ -144,6 +261,17 @@ export default function DashboardPage() {
   const [creating, setCreating] = useState(false);
   const [queryText, setQueryText] = useState("");
   const [onlyExpiring, setOnlyExpiring] = useState(false);
+  const [sortKey, setSortKey] = useState<DashboardSortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function toggleSort(key: DashboardSortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("asc");
+  }
   const [form, setForm] = useState(() => ({
     name: "",
     address: "",
@@ -285,33 +413,14 @@ export default function DashboardPage() {
 
   const filtered = useMemo(() => {
     const q = queryText.trim().toLowerCase();
-    return (items ?? [])
+    const rows = (items ?? [])
       .filter((x) => (onlyExpiring ? x.expiringSoon || x.hasMoveOutOverdue : true))
       .filter((x) => {
         if (!q) return true;
         return (x.searchHaystack ?? "").includes(q);
-      })
-      .sort((a, b) => {
-        // 정렬 기준:
-        // 1) 건물유형(아파트 → 투룸 → 원룸)
-        // 2) 입주자 역할(대표이사 → 상무 → 전무 → 이사)
-        // 3) 기숙사 명 가나다순
-        const brA = buildingTypeRank(a.dorm.propertyBuildingType);
-        const brB = buildingTypeRank(b.dorm.propertyBuildingType);
-        if (brA !== brB) return brA - brB;
-
-        if (a.primaryResidentRoleRank !== b.primaryResidentRoleRank) {
-          return a.primaryResidentRoleRank - b.primaryResidentRoleRank;
-        }
-
-        // 역할이 같으면 해당 역할 내 이름 가나다순
-        if (a.primaryResidentName !== b.primaryResidentName) {
-          return a.primaryResidentName.localeCompare(b.primaryResidentName, "ko");
-        }
-
-        return a.dorm.name.localeCompare(b.dorm.name, "ko");
       });
-  }, [items, queryText, onlyExpiring]);
+    return applyDashboardSort(rows, sortKey, sortDir);
+  }, [items, queryText, onlyExpiring, sortKey, sortDir]);
 
   const totals = useMemo(() => {
     const rows = filtered;
@@ -605,15 +714,71 @@ export default function DashboardPage() {
             <table className="w-full min-w-[980px] border-collapse text-[14px]">
               <thead className="sticky top-0 bg-zinc-50 text-[12px] text-zinc-600">
                 <tr className="border-b border-zinc-200">
-                  <th className="w-[70px] px-3 py-2 text-left align-top font-medium">건물유형</th>
-                  <th className="w-[70px] px-3 py-2 text-left align-top font-medium">임대형태</th>
-                  <th className="px-3 py-2 text-left align-top font-medium">기숙사</th>
-                  <th className="px-3 py-2 text-left align-top font-medium">입주자</th>
-                  <th className="px-3 py-2 text-left align-top font-medium">계약만료</th>
-                  <th className="px-3 py-2 text-left align-top font-medium">D-day</th>
-                  <th className="px-3 py-2 text-left align-top font-medium">보증금</th>
-                  <th className="px-3 py-2 text-left align-top font-medium">월세</th>
-                  <th className="px-3 py-2 text-left align-top font-medium">지급</th>
+                  <SortableTh
+                    label="건물유형"
+                    columnKey="building"
+                    className="w-[70px]"
+                    activeKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortableTh
+                    label="임대형태"
+                    columnKey="tenure"
+                    className="w-[70px]"
+                    activeKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortableTh
+                    label="기숙사"
+                    columnKey="dorm"
+                    activeKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortableTh
+                    label="입주자"
+                    columnKey="resident"
+                    activeKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortableTh
+                    label="계약만료"
+                    columnKey="contractEnd"
+                    activeKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortableTh
+                    label="D-day"
+                    columnKey="dDay"
+                    activeKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortableTh
+                    label="보증금"
+                    columnKey="deposit"
+                    activeKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortableTh
+                    label="월세"
+                    columnKey="monthlyRent"
+                    activeKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
+                  <SortableTh
+                    label="지급"
+                    columnKey="rentDue"
+                    activeKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={toggleSort}
+                  />
                 </tr>
               </thead>
               <tbody>
@@ -896,6 +1061,48 @@ export default function DashboardPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+function SortableTh({
+  label,
+  columnKey,
+  className,
+  activeKey,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  columnKey: DashboardSortKey;
+  className?: string;
+  activeKey: DashboardSortKey | null;
+  sortDir: SortDir;
+  onSort: (key: DashboardSortKey) => void;
+}) {
+  const active = activeKey === columnKey;
+  return (
+    <th className={cn("px-3 py-2 text-left align-top font-medium", className)}>
+      <button
+        type="button"
+        onClick={() => onSort(columnKey)}
+        className={cn(
+          "group inline-flex items-center gap-1 rounded-md text-left transition-colors hover:text-zinc-900",
+          active ? "text-zinc-900" : "text-zinc-600"
+        )}
+        aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+      >
+        <span>{label}</span>
+        <span
+          className={cn(
+            "text-[10px] leading-none",
+            active ? "text-zinc-700" : "text-zinc-300 group-hover:text-zinc-400"
+          )}
+          aria-hidden
+        >
+          {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+        </span>
+      </button>
+    </th>
   );
 }
 
